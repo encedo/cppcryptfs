@@ -1,0 +1,78 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # OpenSSL build takes ~15 min — cache by version + toolset
+      - name: Cache OpenSSL
+        id: cache-openssl
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\OpenSSL
+          key: openssl-3.0.13-x64-static-v1
+
+      - name: Install NASM
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        run: choco install nasm --no-progress -y
+
+      - name: Build and install OpenSSL 3.0.13 (static, x64)
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          set PATH=C:\Program Files\NASM;%PATH%
+
+          curl -fsSL https://www.openssl.org/source/openssl-3.0.13.tar.gz -o openssl.tar.gz
+          tar xzf openssl.tar.gz
+
+          cd openssl-3.0.13
+
+          for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find "VC\Auxiliary\Build\vcvarsall.bat"') do set VCVARSALL=%%i
+          call "%VCVARSALL%" amd64
+
+          perl Configure VC-WIN64A no-shared ^
+            --prefix="C:\Program Files\OpenSSL" ^
+            --openssldir="C:\Program Files\OpenSSL"
+
+          nmake
+          nmake install_sw
+
+      - name: Clone RapidJSON (headers only)
+        run: git clone --depth 1 https://github.com/Tencent/rapidjson.git C:\git\rapidjson
+
+      - name: Install Dokany 2.3.1.1000
+        shell: pwsh
+        run: |
+          $url = "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
+          Invoke-WebRequest $url -OutFile DokanSetup.exe
+          # INNO Setup silent install — all components including development files
+          Start-Process DokanSetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+
+      - name: Build cppcryptfs (Release|x64)
+        shell: cmd
+        run: |
+          msbuild cppcryptfs.sln ^
+            /p:Configuration=Release ^
+            /p:Platform=x64 ^
+            /p:PlatformToolset=v143 ^
+            /m ^
+            /v:minimal
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcryptfs-x64-release
+          path: |
+            x64\Release\cppcryptfs.exe
+            x64\Release\cppcryptfsctl.exe
