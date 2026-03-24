@@ -63,22 +63,26 @@ jobs:
       - name: Install Dokany 2.3.1.1000 SDK (headers + lib only, no driver)
         shell: pwsh
         run: |
+          # innoextract properly handles INNO Setup structure; 7-zip alone misses nested archives
+          choco install innoextract -y --no-progress | Out-Null
+
           $url = "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
           Invoke-WebRequest $url -OutFile DokanSetup.exe
 
-          # Extract INNO Setup installer with 7-zip — avoids driver installation
-          # which hangs on CI due to kernel driver signing/UAC requirements.
-          # Building cppcryptfs only needs the headers and import library.
           $extractDir = "$env:RUNNER_TEMP\dokany_extracted"
-          & "C:\Program Files\7-Zip\7z.exe" x DokanSetup.exe -o"$extractDir" -y | Out-Null
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          innoextract DokanSetup.exe --output-dir "$extractDir"
 
           $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
           New-Item -ItemType Directory -Force -Path "$sdkRoot\include" | Out-Null
           New-Item -ItemType Directory -Force -Path "$sdkRoot\lib"     | Out-Null
 
-          # Copy headers (find dokan.h, copy whole directory)
+          # Copy headers
           $dokanH = Get-ChildItem -Path $extractDir -Recurse -Filter "dokan.h" | Select-Object -First 1
-          if (-not $dokanH) { throw "dokan.h not found in extracted installer" }
+          if (-not $dokanH) {
+            Write-Host "Extracted contents:"; Get-ChildItem -Recurse $extractDir | Select-Object FullName
+            throw "dokan.h not found after innoextract"
+          }
           Get-ChildItem $dokanH.DirectoryName -Filter "*.h" | Copy-Item -Destination "$sdkRoot\include\"
 
           # Copy x64 import library
@@ -87,9 +91,8 @@ jobs:
             Select-Object -First 1 |
             Copy-Item -Destination "$sdkRoot\lib\"
 
-          # Verify
-          if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing after extraction" }
-          if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing after extraction" }
+          if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing" }
+          if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
           Write-Host "Dokany SDK ready at $sdkRoot"
 
       - name: Build cppcryptfs (Release|x64)
