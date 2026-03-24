@@ -21,20 +21,27 @@ jobs:
         with:
           arch: x64
 
-      # OpenSSL build takes ~15 min — cache by version
-      - name: Cache OpenSSL
-        id: cache-openssl
-        uses: actions/cache@v4
-        with:
-          path: C:\Program Files\OpenSSL
-          key: openssl-3.0.13-x64-static-v1
+      # windows-latest runners ship OpenSSL with static libs at C:\Program Files\OpenSSL.
+      # Only build from source if libcrypto.lib is missing (should rarely happen).
+      - name: Check pre-installed OpenSSL
+        id: check-openssl
+        shell: pwsh
+        run: |
+          $lib = "C:\Program Files\OpenSSL\lib\libcrypto.lib"
+          if (Test-Path $lib) {
+            Write-Host "OpenSSL static lib found — skipping build"
+            echo "found=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "OpenSSL static lib not found at $lib — will build from source"
+            echo "found=false" >> $env:GITHUB_OUTPUT
+          }
 
-      - name: Install NASM
-        if: steps.cache-openssl.outputs.cache-hit != 'true'
+      - name: Install NASM (OpenSSL build dep)
+        if: steps.check-openssl.outputs.found != 'true'
         run: choco install nasm --no-progress -y
 
       - name: Build and install OpenSSL 3.0.13 (static, x64)
-        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        if: steps.check-openssl.outputs.found != 'true'
         shell: cmd
         run: |
           set "PATH=C:\Program Files\NASM;%PATH%"
@@ -53,13 +60,37 @@ jobs:
       - name: Clone RapidJSON (headers only)
         run: git clone --depth 1 https://github.com/Tencent/rapidjson.git C:\git\rapidjson
 
-      - name: Install Dokany 2.3.1.1000
+      - name: Install Dokany 2.3.1.1000 SDK (headers + lib only, no driver)
         shell: pwsh
         run: |
           $url = "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
           Invoke-WebRequest $url -OutFile DokanSetup.exe
-          # INNO Setup silent install — all components including development files
-          Start-Process DokanSetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+
+          # Extract INNO Setup installer with 7-zip — avoids driver installation
+          # which hangs on CI due to kernel driver signing/UAC requirements.
+          # Building cppcryptfs only needs the headers and import library.
+          $extractDir = "$env:RUNNER_TEMP\dokany_extracted"
+          & "C:\Program Files\7-Zip\7z.exe" x DokanSetup.exe -o"$extractDir" -y | Out-Null
+
+          $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
+          New-Item -ItemType Directory -Force -Path "$sdkRoot\include" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sdkRoot\lib"     | Out-Null
+
+          # Copy headers (find dokan.h, copy whole directory)
+          $dokanH = Get-ChildItem -Path $extractDir -Recurse -Filter "dokan.h" | Select-Object -First 1
+          if (-not $dokanH) { throw "dokan.h not found in extracted installer" }
+          Get-ChildItem $dokanH.DirectoryName -Filter "*.h" | Copy-Item -Destination "$sdkRoot\include\"
+
+          # Copy x64 import library
+          Get-ChildItem -Path $extractDir -Recurse -Filter "dokan2.lib" |
+            Where-Object { $_.FullName -notmatch "x86" } |
+            Select-Object -First 1 |
+            Copy-Item -Destination "$sdkRoot\lib\"
+
+          # Verify
+          if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing after extraction" }
+          if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing after extraction" }
+          Write-Host "Dokany SDK ready at $sdkRoot"
 
       - name: Build cppcryptfs (Release|x64)
         shell: cmd
