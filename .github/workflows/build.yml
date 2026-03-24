@@ -15,7 +15,13 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # OpenSSL build takes ~15 min — cache by version + toolset
+      # Sets up MSVC environment (cl.exe, nmake, lib, link) for all subsequent steps
+      - name: Setup MSVC dev environment (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # OpenSSL build takes ~15 min — cache by version
       - name: Cache OpenSSL
         id: cache-openssl
         uses: actions/cache@v4
@@ -31,15 +37,11 @@ jobs:
         if: steps.cache-openssl.outputs.cache-hit != 'true'
         shell: cmd
         run: |
-          set PATH=C:\Program Files\NASM;%PATH%
+          set "PATH=C:\Program Files\NASM;%PATH%"
 
           curl -fsSL https://www.openssl.org/source/openssl-3.0.13.tar.gz -o openssl.tar.gz
           tar xzf openssl.tar.gz
-
           cd openssl-3.0.13
-
-          for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find "VC\Auxiliary\Build\vcvarsall.bat"') do set VCVARSALL=%%i
-          call "%VCVARSALL%" amd64
 
           perl Configure VC-WIN64A no-shared ^
             --prefix="C:\Program Files\OpenSSL" ^
