@@ -95,6 +95,7 @@ public:
 	bool read(wstring& mes, const WCHAR *config_file_path = NULL, bool reverse = false);
 	bool encrypt_key(const wchar_t* password, const BYTE *masterkey, string& base64encryptedmastekey, string& scryptSalt, wstring& error_mes);	
 	bool decrypt_key(LPCTSTR password);
+	bool set_masterkey_from_hex(const wchar_t *hex, wstring &mes);
 
 	bool create(const WCHAR* path, const WCHAR* specified_config_path, const WCHAR* password, bool eme, bool plaintext, bool longfilenames,
 		bool siv, bool reverse, int scryptN, const WCHAR* volume_name, bool disablestreams, int longnamemax, bool deterministicnames, wstring& error_mes		

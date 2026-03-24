@@ -158,7 +158,7 @@ void CMountPropertyPage::DefaultAction()
 		MessageBox(mes, L"cppcryptfs", MB_OK | MB_ICONEXCLAMATION);
 }
 
-CString CMountPropertyPage::Mount(LPCWSTR argPath, LPCWSTR argMountPoint, LPCWSTR argPassword, bool argReadOnly, LPCWSTR argConfigPath, bool argReverse)
+CString CMountPropertyPage::Mount(LPCWSTR argPath, LPCWSTR argMountPoint, LPCWSTR argPassword, bool argReadOnly, LPCWSTR argConfigPath, bool argReverse, LPCWSTR argMasterkeyHex)
 {
 	
 
@@ -176,7 +176,7 @@ CString CMountPropertyPage::Mount(LPCWSTR argPath, LPCWSTR argMountPoint, LPCWST
 		return LocUtils::GetStringFromResources(IDS_UNABLE_GET_PASS).c_str();
 	}
 
-	if (wcslen(password.m_buf) < 1) {
+	if (wcslen(password.m_buf) < 1 && argMasterkeyHex == NULL) {
 		return LocUtils::GetStringFromResources(IDS_PASS_CANNOT_BE_EMPTY).c_str();
 	}
 
@@ -340,7 +340,7 @@ CString CMountPropertyPage::Mount(LPCWSTR argPath, LPCWSTR argMountPoint, LPCWST
 	bool bAutoMount = argMountPoint == NULL && (IsDlgButtonChecked(IDC_AUTO_MOUNT) != 0);
 	
 	theApp.DoWaitCursor(1);
-	int result = mount_crypt_fs(cmp, cpath, config_path, password.m_buf, error_mes, reverse, readonly, opts);
+	int result = mount_crypt_fs(cmp, cpath, config_path, password.m_buf, error_mes, reverse, readonly, opts, argMasterkeyHex);
 	theApp.DoWaitCursor(-1);
 
 	if (result != 0) {
@@ -1345,6 +1345,7 @@ void CMountPropertyPage::ProcessCommandLine(LPCWSTR szCmd, BOOL bOnStartup, HAND
 	CString path;
 	CString mountPoint;
 	LockZeroBuffer<WCHAR> password((DWORD)(wcslen(szCmd) + 1), false);
+	wstring masterkey_hex;
 	BOOL mount = FALSE;
 	BOOL dismount = FALSE;
 	BOOL dismount_all = FALSE;
@@ -1378,6 +1379,7 @@ void CMountPropertyPage::ProcessCommandLine(LPCWSTR szCmd, BOOL bOnStartup, HAND
 			{L"drive",   required_argument,  0, 'd'},
 			{ L"info",   required_argument,  0, 'i' },
 			{L"password", required_argument, 0, 'p'},
+			{L"masterkey", required_argument, 0, 'K'},
 			{ L"config", required_argument, 0, 'c' },
 			{L"unmount",  required_argument, 0, 'u'},
 			{L"force",  no_argument, 0, 'f'},
@@ -1402,7 +1404,7 @@ void CMountPropertyPage::ProcessCommandLine(LPCWSTR szCmd, BOOL bOnStartup, HAND
 
 		while (1) {
 
-			c = getopt_long(argc, argv, L"m:d:p:u:vhxtl::rsc:Pi:CDf34M:", long_options, &option_index);
+			c = getopt_long(argc, argv, L"m:d:p:K:u:vhxtl::rsc:Pi:CDf34M:", long_options, &option_index);
 
 			if (c == -1)
 				break;
@@ -1445,6 +1447,9 @@ void CMountPropertyPage::ProcessCommandLine(LPCWSTR szCmd, BOOL bOnStartup, HAND
 				break;
 			case 'p':
 				wcscpy_s(password.m_buf, password.m_len, optarg);
+				break;
+			case 'K':
+				masterkey_hex = optarg;
 				break;
 			case 'u':
 				dismount = TRUE;
@@ -1628,7 +1633,7 @@ void CMountPropertyPage::ProcessCommandLine(LPCWSTR szCmd, BOOL bOnStartup, HAND
 					if (deny_services != -1) {
 						deny_services_setter.init(DENY_SERVICES, deny_services);
 					}
-					errMes = Mount(path, mountPoint, password.m_buf, readonly, config_path.GetLength() > 0 ? config_path : NULL, reverse);
+					errMes = Mount(path, mountPoint, password.m_buf, readonly, config_path.GetLength() > 0 ? config_path : NULL, reverse, masterkey_hex.empty() ? NULL : masterkey_hex.c_str());
 				} else {
 					errMes = L"drive letter/mount point must be specified";
 				}

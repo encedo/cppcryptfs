@@ -657,13 +657,17 @@ int wmain(int argc, wchar_t * const argv[])
 
     bool have_password_arg = false;
 
+    // --masterkey=stdin: read hex masterkey from stdin and substitute into command line.
+    // Avoids exposing the key in process arguments (same reason gocryptfs has -masterkey=stdin).
+    bool masterkey_from_stdin = false;
+
     for (int i = 1; i < argc; ++i) {
         for (const auto& self_arg : self_args) {
             if (wcsncmp(argv[i], self_arg.c_str(), self_arg.length()) == 0) {
                 return do_self_args(argc, argv);
             }
-        }    
-        if (!have_mounting_arg) {        
+        }
+        if (!have_mounting_arg) {
             for (const auto& arg : mounting_args) {
                 if (wcsncmp(argv[i], arg.c_str(), arg.length()) == 0) {
                     have_mounting_arg = true;
@@ -679,6 +683,10 @@ int wmain(int argc, wchar_t * const argv[])
                 }
             }
         }
+        if (wcscmp(argv[i], L"--masterkey=stdin") == 0) {
+            masterkey_from_stdin = true;
+            have_password_arg = true; // suppress stdin password prompt
+        }
     }
 
     LockZeroBuffer<wchar_t> password(PASSWORD_BUFLEN, false);
@@ -690,13 +698,35 @@ int wmain(int argc, wchar_t * const argv[])
 
     // if we're trying to mount and don't have -p or --password then read pw from stdin
     if (have_mounting_arg && !have_password_arg) {
-        
+
         auto pw_res = get_password(password, L"Password:", nullptr);
 
         if (pw_res) {
             return pw_res;
         }
 
+    }
+
+    // read masterkey hex from stdin and keep it in a locked buffer
+    LockZeroBuffer<wchar_t> masterkey_buf(PASSWORD_BUFLEN, false);
+    if (masterkey_from_stdin) {
+        if (!masterkey_buf.IsLocked()) {
+            wcerr << L"unable to lock masterkey buffer\n";
+            return 1;
+        }
+        std::string hex_narrow;
+        if (!std::getline(std::cin, hex_narrow)) {
+            wcerr << L"failed to read masterkey from stdin\n";
+            return 1;
+        }
+        // trim trailing whitespace
+        while (!hex_narrow.empty() && (hex_narrow.back() == '\r' || hex_narrow.back() == '\n' || hex_narrow.back() == ' '))
+            hex_narrow.pop_back();
+        if (hex_narrow.empty()) {
+            wcerr << L"masterkey from stdin is empty\n";
+            return 1;
+        }
+        wcsncpy_s(masterkey_buf.m_buf, masterkey_buf.m_len, wstring(hex_narrow.begin(), hex_narrow.end()).c_str(), _TRUNCATE);
     }
 
     wstring result;
@@ -716,7 +746,13 @@ int wmain(int argc, wchar_t * const argv[])
 
     const WCHAR* args = GetCommandLine();
 
-    auto cmd_len = static_cast<DWORD>(wcslen(args) + wcslen(L" --password=") + wcslen(password.m_buf) + 1);
+    // build the replacement suffix for masterkey so we know the extra length needed
+    wstring masterkey_suffix;
+    if (masterkey_from_stdin) {
+        masterkey_suffix = wstring(L"--masterkey=") + masterkey_buf.m_buf;
+    }
+
+    auto cmd_len = static_cast<DWORD>(wcslen(args) + wcslen(L" --password=") + wcslen(password.m_buf) + masterkey_suffix.length() + 1);
 
     LockZeroBuffer<wchar_t> cmd(cmd_len, false);
 
@@ -726,6 +762,17 @@ int wmain(int argc, wchar_t * const argv[])
     }
 
     wcscpy_s(cmd.m_buf, cmd_len, args);
+
+    if (masterkey_from_stdin) {
+        // replace "--masterkey=stdin" with "--masterkey=<hex>" in-place
+        wstring cmd_str(cmd.m_buf);
+        wstring needle = L"--masterkey=stdin";
+        auto pos = cmd_str.find(needle);
+        if (pos != wstring::npos) {
+            cmd_str.replace(pos, needle.length(), masterkey_suffix);
+        }
+        wcsncpy_s(cmd.m_buf, cmd_len, cmd_str.c_str(), _TRUNCATE);
+    }
 
     if (wcslen(password.m_buf) > 0) {
         wcscat_s(cmd.m_buf, cmd_len, L" --password=");

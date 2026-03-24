@@ -87,7 +87,7 @@ public:
 
 	virtual void DeviceChange() override;
 
-	CString Mount(LPCWSTR argPath = NULL, LPCWSTR argMountPoint = NULL, LPCWSTR argPassword = NULL, bool argReadOnly = false, LPCWSTR argConfigPath = NULL, bool argReverse = false);
+	CString Mount(LPCWSTR argPath = NULL, LPCWSTR argMountPoint = NULL, LPCWSTR argPassword = NULL, bool argReadOnly = false, LPCWSTR argConfigPath = NULL, bool argReverse = false, LPCWSTR argMasterkeyHex = NULL);
 
 	CString Dismount(LPCWSTR argMountPoint, bool interactive, bool forceDismount);
 

@@ -718,6 +718,46 @@ bool CryptConfig::decrypt_key(LPCTSTR password)
 
 
 
+bool CryptConfig::set_masterkey_from_hex(const wchar_t *hex, wstring &mes)
+{
+	if (!m_pKeyBuf) {
+		mes = L"key buffer not initialized";
+		return false;
+	}
+
+	DWORD keylen = GetMasterKeyLength();
+	size_t i = 0, j = 0;
+	size_t hexlen = wcslen(hex);
+
+	while (i < keylen && j < hexlen) {
+		wchar_t c = hex[j];
+		bool is_hex_c = iswdigit(c) || (c >= L'a' && c <= L'f') || (c >= L'A' && c <= L'F');
+		if (!is_hex_c) { ++j; continue; }
+		if (j + 1 >= hexlen) break;
+		wchar_t c2 = hex[j + 1];
+		bool is_hex_c2 = iswdigit(c2) || (c2 >= L'a' && c2 <= L'f') || (c2 >= L'A' && c2 <= L'F');
+		if (!is_hex_c2) break;
+		char buf[3] = { static_cast<char>(c), static_cast<char>(c2), '\0' };
+		unsigned int b = 0;
+		sscanf_s(buf, "%x", &b);
+		m_pKeyBuf->m_buf[i++] = static_cast<unsigned char>(b);
+		j += 2;
+	}
+
+	if (i != keylen) {
+		mes = L"invalid masterkey: expected " + to_wstring(keylen) + L" bytes as hex";
+		return false;
+	}
+
+	if (!InitGCMContentKey(m_pKeyBuf->m_buf)) {
+		mes = L"unable to initialize GCM content key from masterkey";
+		return false;
+	}
+
+	return true;
+}
+
+
 bool CryptConfig::encrypt_key(const wchar_t* password, const BYTE* masterkey, string& base64encryptedmasterkey, string& scryptSalt, wstring& error_mes)
 {
 	bool bRet = true;

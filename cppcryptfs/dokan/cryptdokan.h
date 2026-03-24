@@ -68,7 +68,8 @@ class FsInfo;
 
 int mount_crypt_fs(const WCHAR *mountpoint, const WCHAR *path,
                    const WCHAR *config_path, const WCHAR *password,
-                   wstring &mes, bool reverse, bool readonly, const CryptMountOptions &ops);
+                   wstring &mes, bool reverse, bool readonly, const CryptMountOptions &ops,
+                   const WCHAR *masterkey_hex = nullptr);
 
 BOOL unmount_crypt_fs(const WCHAR *mountpoint, bool wait, wstring &mes);
 

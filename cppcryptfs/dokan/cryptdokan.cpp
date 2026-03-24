@@ -2018,7 +2018,8 @@ static DWORD WINAPI CryptThreadProc(_In_ LPVOID lpParameter
 
 int mount_crypt_fs(const WCHAR* mountpoint, const WCHAR *path,
                    const WCHAR *config_path, const WCHAR *password,
-                   wstring &mes, bool reverse, bool readonly, const CryptMountOptions& opts) {
+                   wstring &mes, bool reverse, bool readonly, const CryptMountOptions& opts,
+                   const WCHAR *masterkey_hex) {
   mes.clear();
 
   if (config_path && *config_path == '\0')
@@ -2186,9 +2187,17 @@ int mount_crypt_fs(const WCHAR* mountpoint, const WCHAR *path,
 	}
 #endif
 	
-    if (!config->decrypt_key(password)) {
-      mes = LocUtils::GetStringFromResources(IDS_PASS_INCORRECT);
-      throw(-1);
+    if (masterkey_hex != nullptr) {
+      wstring mk_mes;
+      if (!config->set_masterkey_from_hex(masterkey_hex, mk_mes)) {
+        mes = mk_mes;
+        throw(-1);
+      }
+    } else {
+      if (!config->decrypt_key(password)) {
+        mes = LocUtils::GetStringFromResources(IDS_PASS_INCORRECT);
+        throw(-1);
+      }
     }
 
     if (config->m_EMENames) {
