@@ -25,11 +25,11 @@ jobs:
         shell: pwsh
         run: |
           $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
-          New-Item -ItemType Directory -Force -Path "$sdkRoot\include", "$sdkRoot\lib" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sdkRoot\include\dokan", "$sdkRoot\lib" | Out-Null
 
           # Clone source for headers only — no installer needed
           git clone --depth 1 --branch v2.3.1.1000 https://github.com/dokan-dev/dokany.git C:\git\dokany
-          Copy-Item "C:\git\dokany\dokan\*.h" -Destination "$sdkRoot\include\"
+          Copy-Item "C:\git\dokany\dokan\*.h" -Destination "$sdkRoot\include\dokan\"
 
           # Generate dokan2.lib import library from a .def file using lib.exe (from MSVC env)
           # Lists all public Dokany 2.x API exports; link will only pull in what cppcryptfs references
@@ -67,7 +67,7 @@ jobs:
           $defPath = "$env:RUNNER_TEMP\dokan2.def"
           $defLines -join "`n" | Out-File -Encoding ascii $defPath
           lib.exe /def:"$defPath" /machine:x64 /out:"$sdkRoot\lib\dokan2.lib"
-          if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing" }
+          if (-not (Test-Path "$sdkRoot\include\dokan\dokan.h")) { throw "dokan.h missing" }
           if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
           Write-Host "Dokany SDK ready at $sdkRoot"
 
