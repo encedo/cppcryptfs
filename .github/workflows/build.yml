@@ -59,35 +59,69 @@ jobs:
           Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\" -Force
 
           # Generate dokan2.lib import library for ${{ matrix.arch }}
-          $defLines = @(
-            "LIBRARY dokan2",
-            "EXPORTS",
-            "  DokanInit",
-            "  DokanShutdown",
-            "  DokanMain",
-            "  DokanCreateFileSystem",
-            "  DokanWaitForFileSystemClosed",
-            "  DokanWaitForFileSystemClosedEx",
-            "  DokanReleaseFileSystem",
-            "  DokanIsFileSystemRunning",
-            "  DokanRemoveMountPoint",
-            "  DokanRemoveMountPointEx",
-            "  DokanOpenRequestorToken",
-            "  DokanCloseHandle",
-            "  DokanNtStatusFromWin32",
-            "  DokanMapKernelToUserCreateFileFlags",
-            "  DokanGetVersion",
-            "  DokanDriverVersion",
-            "  DokanResetTimeout",
-            "  DokanGetMountPointList",
-            "  DokanReleaseMountPointList",
-            "  DokanIsNameInExpression",
-            "  DokanNotifyCreate",
-            "  DokanNotifyDelete",
-            "  DokanNotifyUpdate",
-            "  DokanNotifyXAttrUpdate",
-            "  DokanNotifyRename"
-          )
+          # x64: plain names (no stdcall decoration)
+          # x86: decorated names _Func@N=Func so MSVC stdcall refs resolve to undecorated DLL exports
+          if ("${{ matrix.arch }}" -eq "x86") {
+            $defLines = @(
+              "LIBRARY dokan2",
+              "EXPORTS",
+              "  _DokanInit@0=DokanInit",
+              "  _DokanShutdown@0=DokanShutdown",
+              "  _DokanMain@8=DokanMain",
+              "  _DokanCreateFileSystem@12=DokanCreateFileSystem",
+              "  _DokanWaitForFileSystemClosed@8=DokanWaitForFileSystemClosed",
+              "  _DokanWaitForFileSystemClosedEx@8=DokanWaitForFileSystemClosedEx",
+              "  _DokanReleaseFileSystem@4=DokanReleaseFileSystem",
+              "  _DokanIsFileSystemRunning@4=DokanIsFileSystemRunning",
+              "  _DokanRemoveMountPoint@4=DokanRemoveMountPoint",
+              "  _DokanRemoveMountPointEx@8=DokanRemoveMountPointEx",
+              "  _DokanOpenRequestorToken@4=DokanOpenRequestorToken",
+              "  _DokanCloseHandle@4=DokanCloseHandle",
+              "  _DokanNtStatusFromWin32@4=DokanNtStatusFromWin32",
+              "  _DokanMapKernelToUserCreateFileFlags@28=DokanMapKernelToUserCreateFileFlags",
+              "  _DokanGetVersion@0=DokanGetVersion",
+              "  _DokanDriverVersion@0=DokanDriverVersion",
+              "  _DokanResetTimeout@8=DokanResetTimeout",
+              "  _DokanGetMountPointList@8=DokanGetMountPointList",
+              "  _DokanReleaseMountPointList@4=DokanReleaseMountPointList",
+              "  _DokanIsNameInExpression@12=DokanIsNameInExpression",
+              "  _DokanNotifyCreate@12=DokanNotifyCreate",
+              "  _DokanNotifyDelete@12=DokanNotifyDelete",
+              "  _DokanNotifyUpdate@8=DokanNotifyUpdate",
+              "  _DokanNotifyXAttrUpdate@8=DokanNotifyXAttrUpdate",
+              "  _DokanNotifyRename@20=DokanNotifyRename"
+            )
+          } else {
+            $defLines = @(
+              "LIBRARY dokan2",
+              "EXPORTS",
+              "  DokanInit",
+              "  DokanShutdown",
+              "  DokanMain",
+              "  DokanCreateFileSystem",
+              "  DokanWaitForFileSystemClosed",
+              "  DokanWaitForFileSystemClosedEx",
+              "  DokanReleaseFileSystem",
+              "  DokanIsFileSystemRunning",
+              "  DokanRemoveMountPoint",
+              "  DokanRemoveMountPointEx",
+              "  DokanOpenRequestorToken",
+              "  DokanCloseHandle",
+              "  DokanNtStatusFromWin32",
+              "  DokanMapKernelToUserCreateFileFlags",
+              "  DokanGetVersion",
+              "  DokanDriverVersion",
+              "  DokanResetTimeout",
+              "  DokanGetMountPointList",
+              "  DokanReleaseMountPointList",
+              "  DokanIsNameInExpression",
+              "  DokanNotifyCreate",
+              "  DokanNotifyDelete",
+              "  DokanNotifyUpdate",
+              "  DokanNotifyXAttrUpdate",
+              "  DokanNotifyRename"
+            )
+          }
           $defPath = "$env:RUNNER_TEMP\dokan2-${{ matrix.arch }}.def"
           $defLines -join "`n" | Out-File -Encoding ascii $defPath
           lib.exe /def:"$defPath" /machine:${{ matrix.dokan_machine }} /out:"$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
