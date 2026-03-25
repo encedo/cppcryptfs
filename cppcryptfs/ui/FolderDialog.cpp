@@ -1,10 +1,11 @@
 // FolderDialog.cpp: implementation of the CFolderDialog class.
-//	$Copyright ©  1998 Kenneth M. Reed, ALL RIGHTS RESERVED. $
+//	$Copyright ï¿½  1998 Kenneth M. Reed, ALL RIGHTS RESERVED. $
 //	$Header: FolderDialog.cpp  Revision:1.11  Tue Jun 23 18:00:44 1998  KenReed $
 
 // from http://www.codeguru.com/cpp/w-d/dislog/dialogforselectingfolders/article.php/c1941/MFC-Wrapper-for-SHBrowseForFolder.htm
 
 #include "stdafx.h"
+#include "cppcryptfs.h"
 #include "FolderDialog.h"
 #include "locutils.h"
 #include "resource.h"
