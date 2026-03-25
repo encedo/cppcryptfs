@@ -21,7 +21,7 @@ jobs:
             output_dir: x64\Release
           - arch: x86
             platform: x86
-            msbuild_platform: Win32
+            msbuild_platform: x86
             openssl_dir: C:\Program Files (x86)\OpenSSL
             openssl_configure: VC-WIN32
             dokan_machine: x86
