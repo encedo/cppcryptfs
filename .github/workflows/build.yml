@@ -8,6 +8,26 @@ jobs:
   build:
     runs-on: windows-latest
 
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            platform: x64
+            msbuild_platform: x64
+            openssl_dir: C:\Program Files\OpenSSL
+            openssl_configure: VC-WIN64A
+            dokan_machine: x64
+            artifact_name: cppcryptfs-x64-release
+            output_dir: x64\Release
+          - arch: x86
+            platform: x86
+            msbuild_platform: Win32
+            openssl_dir: C:\Program Files (x86)\OpenSSL
+            openssl_configure: VC-WIN32
+            dokan_machine: x86
+            artifact_name: cppcryptfs-x86-release
+            output_dir: Win32\Release
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,11 +35,10 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # Sets up MSVC environment (cl.exe, nmake, lib, link) for all subsequent steps
-      - name: Setup MSVC dev environment (x64)
+      - name: Setup MSVC dev environment (${{ matrix.arch }})
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x64
+          arch: ${{ matrix.arch }}
 
       - name: Install Dokany 2.3.1.1000 SDK (headers from source + import lib from def)
         shell: pwsh
@@ -27,18 +46,17 @@ jobs:
           $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
           New-Item -ItemType Directory -Force -Path "$sdkRoot\include\dokan", "$sdkRoot\lib" | Out-Null
 
-          # Clone source for headers only — no installer needed
-          git clone --depth 1 --branch v2.3.1.1000 https://github.com/dokan-dev/dokany.git C:\git\dokany
-          Copy-Item "C:\git\dokany\dokan\*.h" -Destination "$sdkRoot\include\dokan\"
+          # Clone source for headers (skip if already present from a previous matrix job on this runner)
+          if (-not (Test-Path "C:\git\dokany")) {
+            git clone --depth 1 --branch v2.3.1.1000 https://github.com/dokan-dev/dokany.git C:\git\dokany
+          }
+          Copy-Item "C:\git\dokany\dokan\*.h" -Destination "$sdkRoot\include\dokan\" -Force
           # dokan.h includes "public.h" which lives in sys/ (not dokan/) in the source tree
           $pubH = Get-ChildItem -Path "C:\git\dokany" -Filter "public.h" -Recurse | Select-Object -First 1
           if (-not $pubH) { throw "public.h not found in dokany source" }
-          Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\"
+          Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\" -Force
 
-          # Generate dokan2.lib import library from a .def file using lib.exe (from MSVC env)
-          # Lists all public Dokany 2.x API exports; link will only pull in what cppcryptfs references
-          # Array-join avoids PowerShell here-string syntax (which requires column-0 terminators
-          # that conflict with YAML block scalar indentation rules).
+          # Generate dokan2.lib import library for ${{ matrix.arch }}
           $defLines = @(
             "LIBRARY dokan2",
             "EXPORTS",
@@ -68,20 +86,18 @@ jobs:
             "  DokanNotifyXAttrUpdate",
             "  DokanNotifyRename"
           )
-          $defPath = "$env:RUNNER_TEMP\dokan2.def"
+          $defPath = "$env:RUNNER_TEMP\dokan2-${{ matrix.arch }}.def"
           $defLines -join "`n" | Out-File -Encoding ascii $defPath
-          lib.exe /def:"$defPath" /machine:x64 /out:"$sdkRoot\lib\dokan2.lib"
+          lib.exe /def:"$defPath" /machine:${{ matrix.dokan_machine }} /out:"$sdkRoot\lib\dokan2.lib"
           if (-not (Test-Path "$sdkRoot\include\dokan\dokan.h")) { throw "dokan.h missing" }
           if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
-          Write-Host "Dokany SDK ready at $sdkRoot"
+          Write-Host "Dokany SDK ready at $sdkRoot (${{ matrix.arch }})"
 
-      # windows-latest runners ship OpenSSL with static libs at C:\Program Files\OpenSSL.
-      # Only build from source if libcrypto.lib is missing (should rarely happen).
-      - name: Check pre-installed OpenSSL
+      - name: Check pre-installed OpenSSL (${{ matrix.arch }})
         id: check-openssl
         shell: pwsh
         run: |
-          $lib = "C:\Program Files\OpenSSL\lib\libcrypto.lib"
+          $lib = "${{ matrix.openssl_dir }}\lib\libcrypto.lib"
           if (Test-Path $lib) {
             Write-Host "OpenSSL static lib found — skipping build"
             echo "found=true" >> $env:GITHUB_OUTPUT
@@ -94,7 +110,7 @@ jobs:
         if: steps.check-openssl.outputs.found != 'true'
         run: choco install nasm --no-progress -y
 
-      - name: Build and install OpenSSL 3.0.13 (static, x64)
+      - name: Build and install OpenSSL 3.0.13 (static, ${{ matrix.arch }})
         if: steps.check-openssl.outputs.found != 'true'
         shell: cmd
         run: |
@@ -104,9 +120,9 @@ jobs:
           tar xzf openssl.tar.gz
           cd openssl-3.0.13
 
-          perl Configure VC-WIN64A no-shared ^
-            --prefix="C:\Program Files\OpenSSL" ^
-            --openssldir="C:\Program Files\OpenSSL"
+          perl Configure ${{ matrix.openssl_configure }} no-shared ^
+            --prefix="${{ matrix.openssl_dir }}" ^
+            --openssldir="${{ matrix.openssl_dir }}"
 
           nmake
           nmake install_sw
@@ -114,12 +130,12 @@ jobs:
       - name: Clone RapidJSON (headers only)
         run: git clone --depth 1 https://github.com/Tencent/rapidjson.git C:\git\rapidjson
 
-      - name: Build cppcryptfs (Release|x64)
+      - name: Build cppcryptfs (Release|${{ matrix.msbuild_platform }})
         shell: cmd
         run: |
           msbuild cppcryptfs.sln ^
             /p:Configuration=Release ^
-            /p:Platform=x64 ^
+            /p:Platform=${{ matrix.msbuild_platform }} ^
             /p:PlatformToolset=v143 ^
             /m ^
             /v:minimal
@@ -127,7 +143,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cppcryptfs-x64-release
+          name: ${{ matrix.artifact_name }}
           path: |
-            x64\Release\cppcryptfs.exe
-            x64\Release\cppcryptfsctl.exe
+            ${{ matrix.output_dir }}\cppcryptfs.exe
+            ${{ matrix.output_dir }}\cppcryptfsctl.exe
