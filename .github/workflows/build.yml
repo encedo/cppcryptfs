@@ -59,38 +59,38 @@ jobs:
           Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\" -Force
 
           # Generate dokan2.lib import library for ${{ matrix.arch }}
-          # x64: plain names (no stdcall decoration)
-          # x86: decorated names _Func@N=Func so MSVC stdcall refs resolve to undecorated DLL exports
+          # x64: DEF file with plain names (no stdcall decoration on x64)
+          # x86: lib.exe /export: flags — in DEF, @N is parsed as ordinal not symbol suffix,
+          #       so we use /export:_Func@N=Func where @N is preserved as part of the symbol name
+          $libOut = "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
           if ("${{ matrix.arch }}" -eq "x86") {
-            $defLines = @(
-              "LIBRARY dokan2",
-              "EXPORTS",
-              "  _DokanInit@0=DokanInit",
-              "  _DokanShutdown@0=DokanShutdown",
-              "  _DokanMain@8=DokanMain",
-              "  _DokanCreateFileSystem@12=DokanCreateFileSystem",
-              "  _DokanWaitForFileSystemClosed@8=DokanWaitForFileSystemClosed",
-              "  _DokanWaitForFileSystemClosedEx@8=DokanWaitForFileSystemClosedEx",
-              "  _DokanReleaseFileSystem@4=DokanReleaseFileSystem",
-              "  _DokanIsFileSystemRunning@4=DokanIsFileSystemRunning",
-              "  _DokanRemoveMountPoint@4=DokanRemoveMountPoint",
-              "  _DokanRemoveMountPointEx@8=DokanRemoveMountPointEx",
-              "  _DokanOpenRequestorToken@4=DokanOpenRequestorToken",
-              "  _DokanCloseHandle@4=DokanCloseHandle",
-              "  _DokanNtStatusFromWin32@4=DokanNtStatusFromWin32",
-              "  _DokanMapKernelToUserCreateFileFlags@28=DokanMapKernelToUserCreateFileFlags",
-              "  _DokanGetVersion@0=DokanGetVersion",
-              "  _DokanDriverVersion@0=DokanDriverVersion",
-              "  _DokanResetTimeout@8=DokanResetTimeout",
-              "  _DokanGetMountPointList@8=DokanGetMountPointList",
-              "  _DokanReleaseMountPointList@4=DokanReleaseMountPointList",
-              "  _DokanIsNameInExpression@12=DokanIsNameInExpression",
-              "  _DokanNotifyCreate@12=DokanNotifyCreate",
-              "  _DokanNotifyDelete@12=DokanNotifyDelete",
-              "  _DokanNotifyUpdate@8=DokanNotifyUpdate",
-              "  _DokanNotifyXAttrUpdate@8=DokanNotifyXAttrUpdate",
-              "  _DokanNotifyRename@20=DokanNotifyRename"
-            )
+            lib.exe /machine:X86 /out:"$libOut" `
+              "/export:_DokanInit@0=DokanInit" `
+              "/export:_DokanShutdown@0=DokanShutdown" `
+              "/export:_DokanMain@8=DokanMain" `
+              "/export:_DokanCreateFileSystem@12=DokanCreateFileSystem" `
+              "/export:_DokanWaitForFileSystemClosed@8=DokanWaitForFileSystemClosed" `
+              "/export:_DokanWaitForFileSystemClosedEx@8=DokanWaitForFileSystemClosedEx" `
+              "/export:_DokanReleaseFileSystem@4=DokanReleaseFileSystem" `
+              "/export:_DokanIsFileSystemRunning@4=DokanIsFileSystemRunning" `
+              "/export:_DokanRemoveMountPoint@4=DokanRemoveMountPoint" `
+              "/export:_DokanRemoveMountPointEx@8=DokanRemoveMountPointEx" `
+              "/export:_DokanOpenRequestorToken@4=DokanOpenRequestorToken" `
+              "/export:_DokanCloseHandle@4=DokanCloseHandle" `
+              "/export:_DokanNtStatusFromWin32@4=DokanNtStatusFromWin32" `
+              "/export:_DokanMapKernelToUserCreateFileFlags@28=DokanMapKernelToUserCreateFileFlags" `
+              "/export:_DokanGetVersion@0=DokanGetVersion" `
+              "/export:_DokanDriverVersion@0=DokanDriverVersion" `
+              "/export:_DokanResetTimeout@8=DokanResetTimeout" `
+              "/export:_DokanGetMountPointList@8=DokanGetMountPointList" `
+              "/export:_DokanReleaseMountPointList@4=DokanReleaseMountPointList" `
+              "/export:_DokanIsNameInExpression@12=DokanIsNameInExpression" `
+              "/export:_DokanNotifyCreate@12=DokanNotifyCreate" `
+              "/export:_DokanNotifyDelete@12=DokanNotifyDelete" `
+              "/export:_DokanNotifyUpdate@8=DokanNotifyUpdate" `
+              "/export:_DokanNotifyXAttrUpdate@8=DokanNotifyXAttrUpdate" `
+              "/export:_DokanNotifyRename@20=DokanNotifyRename"
+            if ($LASTEXITCODE -ne 0) { throw "lib.exe /export failed for x86" }
           } else {
             $defLines = @(
               "LIBRARY dokan2",
@@ -121,10 +121,11 @@ jobs:
               "  DokanNotifyXAttrUpdate",
               "  DokanNotifyRename"
             )
+            $defPath = "$env:RUNNER_TEMP\dokan2-x64.def"
+            $defLines -join "`n" | Out-File -Encoding ascii $defPath
+            lib.exe /def:"$defPath" /machine:X64 /out:"$libOut"
+            if ($LASTEXITCODE -ne 0) { throw "lib.exe /def failed for x64" }
           }
-          $defPath = "$env:RUNNER_TEMP\dokan2-${{ matrix.arch }}.def"
-          $defLines -join "`n" | Out-File -Encoding ascii $defPath
-          lib.exe /def:"$defPath" /machine:${{ matrix.dokan_machine }} /out:"$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
           if (-not (Test-Path "$sdkRoot\include\dokan\dokan.h")) { throw "dokan.h missing" }
           if (-not (Test-Path "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"))  { throw "dokan2.lib missing" }
           Write-Host "Dokany SDK ready at $sdkRoot (${{ matrix.arch }})"
