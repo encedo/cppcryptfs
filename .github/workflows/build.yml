@@ -64,28 +64,41 @@ jobs:
         shell: pwsh
         run: |
           $url = "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
-          Invoke-WebRequest $url -OutFile DokanSetup.exe
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\DokanSetup.exe"
 
-          $extractDir = "$env:RUNNER_TEMP\dokany_extracted"
-          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          $layoutDir  = "$env:RUNNER_TEMP\dokany_layout"
+          $msiExtract = "$env:RUNNER_TEMP\dokany_msi"
+          New-Item -ItemType Directory -Force -Path $layoutDir, $msiExtract | Out-Null
 
-          # DokanSetup.exe is NSIS-based (not InnoSetup); 7-zip handles NSIS natively
-          & "C:\Program Files\7-Zip\7z.exe" x DokanSetup.exe "-o$extractDir" -y | Out-Null
+          # DokanSetup.exe is a WiX Burn bundle; /layout extracts payload without installing
+          $p = Start-Process -Wait -PassThru -FilePath "$env:RUNNER_TEMP\DokanSetup.exe" `
+               -ArgumentList "/layout `"$layoutDir`""
+          Write-Host "Layout exit code: $($p.ExitCode)"
+          Write-Host "Layout contents:"; Get-ChildItem -Recurse $layoutDir | Select-Object FullName, Length
+
+          # Find the largest MSI (the SDK/runtime one, not a tiny helper)
+          $msi = Get-ChildItem -Recurse $layoutDir -Filter "*.msi" |
+              Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $msi) { throw "No MSI found in WiX layout" }
+          Write-Host "Using MSI: $($msi.FullName)"
+
+          # msiexec /a = administrative install: extracts files without running driver setup
+          $p2 = Start-Process -Wait -PassThru -FilePath msiexec `
+                -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=`"$msiExtract`""
+          Write-Host "MSI extract exit code: $($p2.ExitCode)"
 
           $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
-          New-Item -ItemType Directory -Force -Path "$sdkRoot\include" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$sdkRoot\lib"     | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sdkRoot\include", "$sdkRoot\lib" | Out-Null
 
-          # Copy headers
-          $dokanH = Get-ChildItem -Path $extractDir -Recurse -Filter "dokan.h" | Select-Object -First 1
+          $dokanH = Get-ChildItem -Recurse $msiExtract -Filter "dokan.h" | Select-Object -First 1
           if (-not $dokanH) {
-            Write-Host "Extracted contents:"; Get-ChildItem -Recurse $extractDir | Select-Object FullName
-            throw "dokan.h not found after 7-zip extraction"
+            Write-Host "MSI extract tree:"; Get-ChildItem -Recurse $msiExtract | Select-Object FullName
+            throw "dokan.h not found after MSI extraction"
           }
+          Write-Host "Found dokan.h at: $($dokanH.FullName)"
           Get-ChildItem $dokanH.DirectoryName -Filter "*.h" | Copy-Item -Destination "$sdkRoot\include\"
 
-          # Copy x64 import library
-          Get-ChildItem -Path $extractDir -Recurse -Filter "dokan2.lib" |
+          Get-ChildItem -Recurse $msiExtract -Filter "dokan2.lib" |
             Where-Object { $_.FullName -notmatch "x86" } |
             Select-Object -First 1 |
             Copy-Item -Destination "$sdkRoot\lib\"
