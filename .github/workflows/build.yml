@@ -21,6 +21,54 @@ jobs:
         with:
           arch: x64
 
+      - name: Install Dokany 2.3.1.1000 SDK (headers from source + import lib from def)
+        shell: pwsh
+        run: |
+          $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
+          New-Item -ItemType Directory -Force -Path "$sdkRoot\include", "$sdkRoot\lib" | Out-Null
+
+          # Clone source for headers only — no installer needed
+          git clone --depth 1 --branch v2.3.1.1000 https://github.com/dokan-dev/dokany.git C:\git\dokany
+          Copy-Item "C:\git\dokany\dokan\*.h" -Destination "$sdkRoot\include\"
+
+          # Generate dokan2.lib import library from a .def file using lib.exe (from MSVC env)
+          # Lists all public Dokany 2.x API exports; link will only pull in what cppcryptfs references
+          $def = @"
+LIBRARY dokan2
+EXPORTS
+  DokanInit
+  DokanShutdown
+  DokanMain
+  DokanCreateFileSystem
+  DokanWaitForFileSystemClosed
+  DokanWaitForFileSystemClosedEx
+  DokanReleaseFileSystem
+  DokanIsFileSystemRunning
+  DokanRemoveMountPoint
+  DokanRemoveMountPointEx
+  DokanOpenRequestorToken
+  DokanCloseHandle
+  DokanNtStatusFromWin32
+  DokanMapKernelToUserCreateFileFlags
+  DokanGetVersion
+  DokanDriverVersion
+  DokanResetTimeout
+  DokanGetMountPointList
+  DokanReleaseMountPointList
+  DokanIsNameInExpression
+  DokanNotifyCreate
+  DokanNotifyDelete
+  DokanNotifyUpdate
+  DokanNotifyXAttrUpdate
+  DokanNotifyRename
+"@
+          $defPath = "$env:RUNNER_TEMP\dokan2.def"
+          $def | Out-File -Encoding ascii $defPath
+          lib.exe /def:"$defPath" /machine:x64 /out:"$sdkRoot\lib\dokan2.lib"
+          if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing" }
+          if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
+          Write-Host "Dokany SDK ready at $sdkRoot"
+
       # windows-latest runners ship OpenSSL with static libs at C:\Program Files\OpenSSL.
       # Only build from source if libcrypto.lib is missing (should rarely happen).
       - name: Check pre-installed OpenSSL
@@ -59,53 +107,6 @@ jobs:
 
       - name: Clone RapidJSON (headers only)
         run: git clone --depth 1 https://github.com/Tencent/rapidjson.git C:\git\rapidjson
-
-      - name: Install Dokany 2.3.1.1000 SDK (headers + lib only, no driver)
-        shell: pwsh
-        run: |
-          $url = "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
-          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\DokanSetup.exe"
-
-          $layoutDir  = "$env:RUNNER_TEMP\dokany_layout"
-          $msiExtract = "$env:RUNNER_TEMP\dokany_msi"
-          New-Item -ItemType Directory -Force -Path $layoutDir, $msiExtract | Out-Null
-
-          # DokanSetup.exe is a WiX Burn bundle; /layout extracts payload without installing
-          $p = Start-Process -Wait -PassThru -FilePath "$env:RUNNER_TEMP\DokanSetup.exe" `
-               -ArgumentList "/layout `"$layoutDir`""
-          Write-Host "Layout exit code: $($p.ExitCode)"
-          Write-Host "Layout contents:"; Get-ChildItem -Recurse $layoutDir | Select-Object FullName, Length
-
-          # Find the largest MSI (the SDK/runtime one, not a tiny helper)
-          $msi = Get-ChildItem -Recurse $layoutDir -Filter "*.msi" |
-              Sort-Object Length -Descending | Select-Object -First 1
-          if (-not $msi) { throw "No MSI found in WiX layout" }
-          Write-Host "Using MSI: $($msi.FullName)"
-
-          # msiexec /a = administrative install: extracts files without running driver setup
-          $p2 = Start-Process -Wait -PassThru -FilePath msiexec `
-                -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=`"$msiExtract`""
-          Write-Host "MSI extract exit code: $($p2.ExitCode)"
-
-          $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
-          New-Item -ItemType Directory -Force -Path "$sdkRoot\include", "$sdkRoot\lib" | Out-Null
-
-          $dokanH = Get-ChildItem -Recurse $msiExtract -Filter "dokan.h" | Select-Object -First 1
-          if (-not $dokanH) {
-            Write-Host "MSI extract tree:"; Get-ChildItem -Recurse $msiExtract | Select-Object FullName
-            throw "dokan.h not found after MSI extraction"
-          }
-          Write-Host "Found dokan.h at: $($dokanH.FullName)"
-          Get-ChildItem $dokanH.DirectoryName -Filter "*.h" | Copy-Item -Destination "$sdkRoot\include\"
-
-          Get-ChildItem -Recurse $msiExtract -Filter "dokan2.lib" |
-            Where-Object { $_.FullName -notmatch "x86" } |
-            Select-Object -First 1 |
-            Copy-Item -Destination "$sdkRoot\lib\"
-
-          if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing" }
-          if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
-          Write-Host "Dokany SDK ready at $sdkRoot"
 
       - name: Build cppcryptfs (Release|x64)
         shell: cmd
