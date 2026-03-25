@@ -76,7 +76,8 @@ public:
 
 	friend int mount_crypt_fs(const WCHAR* mountpoint, const WCHAR *path,
 		const WCHAR *config_path, const WCHAR *password,
-		wstring &mes, bool reverse, bool readonly, const CryptMountOptions& opts);
+		wstring &mes, bool reverse, bool readonly, const CryptMountOptions& opts,
+		const WCHAR *masterkey_hex);
 	friend BOOL unmount_crypt_fs(const WCHAR* mountpoint, bool wait, wstring& mes);
 	friend bool unmount_all(bool wait);
 	friend BOOL wait_for_all_unmounted();
