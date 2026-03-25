@@ -64,7 +64,10 @@ jobs:
           #       so we use /export:_Func@N=Func where @N is preserved as part of the symbol name
           $libOut = "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
           if ("${{ matrix.arch }}" -eq "x86") {
-            lib.exe /machine:X86 /out:"$libOut" `
+            # lib.exe needs /def: to know the DLL name; /export: preserves @N as part of symbol name
+            $x86NameDef = "$env:RUNNER_TEMP\dokan2-x86-name.def"
+            "LIBRARY dokan2" | Out-File -Encoding ascii $x86NameDef
+            lib.exe /def:"$x86NameDef" /machine:X86 /out:"$libOut" `
               "/export:_DokanInit@0=DokanInit" `
               "/export:_DokanShutdown@0=DokanShutdown" `
               "/export:_DokanMain@8=DokanMain" `
