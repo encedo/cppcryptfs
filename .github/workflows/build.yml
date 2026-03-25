@@ -63,15 +63,14 @@ jobs:
       - name: Install Dokany 2.3.1.1000 SDK (headers + lib only, no driver)
         shell: pwsh
         run: |
-          # innoextract properly handles INNO Setup structure; 7-zip alone misses nested archives
-          choco install innoextract -y --no-progress | Out-Null
-
           $url = "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
           Invoke-WebRequest $url -OutFile DokanSetup.exe
 
           $extractDir = "$env:RUNNER_TEMP\dokany_extracted"
           New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-          innoextract DokanSetup.exe --output-dir "$extractDir"
+
+          # DokanSetup.exe is NSIS-based (not InnoSetup); 7-zip handles NSIS natively
+          & "C:\Program Files\7-Zip\7z.exe" x DokanSetup.exe "-o$extractDir" -y | Out-Null
 
           $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
           New-Item -ItemType Directory -Force -Path "$sdkRoot\include" | Out-Null
@@ -81,7 +80,7 @@ jobs:
           $dokanH = Get-ChildItem -Path $extractDir -Recurse -Filter "dokan.h" | Select-Object -First 1
           if (-not $dokanH) {
             Write-Host "Extracted contents:"; Get-ChildItem -Recurse $extractDir | Select-Object FullName
-            throw "dokan.h not found after innoextract"
+            throw "dokan.h not found after 7-zip extraction"
           }
           Get-ChildItem $dokanH.DirectoryName -Filter "*.h" | Copy-Item -Destination "$sdkRoot\include\"
 
