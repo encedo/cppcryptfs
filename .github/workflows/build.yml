@@ -17,6 +17,7 @@ jobs:
             openssl_dir: C:\Program Files\OpenSSL
             openssl_configure: VC-WIN64A
             dokan_machine: x64
+            dokan_lib_dir: lib
             artifact_name: cppcryptfs-x64-release
             output_dir: x64\Release
           - arch: x86
@@ -25,6 +26,7 @@ jobs:
             openssl_dir: C:\Program Files (x86)\OpenSSL
             openssl_configure: VC-WIN32
             dokan_machine: x86
+            dokan_lib_dir: x86\lib
             artifact_name: cppcryptfs-x86-release
             output_dir: Win32\Release
 
@@ -44,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $sdkRoot = "C:\Program Files\Dokan\Dokan Library-2.3.1"
-          New-Item -ItemType Directory -Force -Path "$sdkRoot\include\dokan", "$sdkRoot\lib" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sdkRoot\include\dokan", "$sdkRoot\${{ matrix.dokan_lib_dir }}" | Out-Null
 
           # Clone source for headers (skip if already present from a previous matrix job on this runner)
           if (-not (Test-Path "C:\git\dokany")) {
@@ -88,9 +90,9 @@ jobs:
           )
           $defPath = "$env:RUNNER_TEMP\dokan2-${{ matrix.arch }}.def"
           $defLines -join "`n" | Out-File -Encoding ascii $defPath
-          lib.exe /def:"$defPath" /machine:${{ matrix.dokan_machine }} /out:"$sdkRoot\lib\dokan2.lib"
+          lib.exe /def:"$defPath" /machine:${{ matrix.dokan_machine }} /out:"$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
           if (-not (Test-Path "$sdkRoot\include\dokan\dokan.h")) { throw "dokan.h missing" }
-          if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
+          if (-not (Test-Path "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"))  { throw "dokan2.lib missing" }
           Write-Host "Dokany SDK ready at $sdkRoot (${{ matrix.arch }})"
 
       - name: Check pre-installed OpenSSL (${{ matrix.arch }})
