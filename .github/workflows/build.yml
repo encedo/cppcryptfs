@@ -33,37 +33,39 @@ jobs:
 
           # Generate dokan2.lib import library from a .def file using lib.exe (from MSVC env)
           # Lists all public Dokany 2.x API exports; link will only pull in what cppcryptfs references
-          $def = @"
-LIBRARY dokan2
-EXPORTS
-  DokanInit
-  DokanShutdown
-  DokanMain
-  DokanCreateFileSystem
-  DokanWaitForFileSystemClosed
-  DokanWaitForFileSystemClosedEx
-  DokanReleaseFileSystem
-  DokanIsFileSystemRunning
-  DokanRemoveMountPoint
-  DokanRemoveMountPointEx
-  DokanOpenRequestorToken
-  DokanCloseHandle
-  DokanNtStatusFromWin32
-  DokanMapKernelToUserCreateFileFlags
-  DokanGetVersion
-  DokanDriverVersion
-  DokanResetTimeout
-  DokanGetMountPointList
-  DokanReleaseMountPointList
-  DokanIsNameInExpression
-  DokanNotifyCreate
-  DokanNotifyDelete
-  DokanNotifyUpdate
-  DokanNotifyXAttrUpdate
-  DokanNotifyRename
-"@
+          # Array-join avoids PowerShell here-string syntax (which requires column-0 terminators
+          # that conflict with YAML block scalar indentation rules).
+          $defLines = @(
+            "LIBRARY dokan2",
+            "EXPORTS",
+            "  DokanInit",
+            "  DokanShutdown",
+            "  DokanMain",
+            "  DokanCreateFileSystem",
+            "  DokanWaitForFileSystemClosed",
+            "  DokanWaitForFileSystemClosedEx",
+            "  DokanReleaseFileSystem",
+            "  DokanIsFileSystemRunning",
+            "  DokanRemoveMountPoint",
+            "  DokanRemoveMountPointEx",
+            "  DokanOpenRequestorToken",
+            "  DokanCloseHandle",
+            "  DokanNtStatusFromWin32",
+            "  DokanMapKernelToUserCreateFileFlags",
+            "  DokanGetVersion",
+            "  DokanDriverVersion",
+            "  DokanResetTimeout",
+            "  DokanGetMountPointList",
+            "  DokanReleaseMountPointList",
+            "  DokanIsNameInExpression",
+            "  DokanNotifyCreate",
+            "  DokanNotifyDelete",
+            "  DokanNotifyUpdate",
+            "  DokanNotifyXAttrUpdate",
+            "  DokanNotifyRename"
+          )
           $defPath = "$env:RUNNER_TEMP\dokan2.def"
-          $def | Out-File -Encoding ascii $defPath
+          $defLines -join "`n" | Out-File -Encoding ascii $defPath
           lib.exe /def:"$defPath" /machine:x64 /out:"$sdkRoot\lib\dokan2.lib"
           if (-not (Test-Path "$sdkRoot\include\dokan.h")) { throw "dokan.h missing" }
           if (-not (Test-Path "$sdkRoot\lib\dokan2.lib"))  { throw "dokan2.lib missing" }
