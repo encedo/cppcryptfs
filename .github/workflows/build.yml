@@ -30,6 +30,10 @@ jobs:
           # Clone source for headers only — no installer needed
           git clone --depth 1 --branch v2.3.1.1000 https://github.com/dokan-dev/dokany.git C:\git\dokany
           Copy-Item "C:\git\dokany\dokan\*.h" -Destination "$sdkRoot\include\dokan\"
+          # dokan.h includes "public.h" which lives in sys/ (not dokan/) in the source tree
+          $pubH = Get-ChildItem -Path "C:\git\dokany" -Filter "public.h" -Recurse | Select-Object -First 1
+          if (-not $pubH) { throw "public.h not found in dokany source" }
+          Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\"
 
           # Generate dokan2.lib import library from a .def file using lib.exe (from MSVC env)
           # Lists all public Dokany 2.x API exports; link will only pull in what cppcryptfs references
