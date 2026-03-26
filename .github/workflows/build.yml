@@ -16,19 +16,10 @@ jobs:
             msbuild_platform: x64
             openssl_dir: C:\Program Files\OpenSSL
             openssl_configure: VC-WIN64A
-            dokan_machine: x64
             dokan_lib_dir: lib
             artifact_name: cppcryptfs-x64-release
             output_dir: x64\Release
-          - arch: x86
-            platform: x86
-            msbuild_platform: x86
-            openssl_dir: C:\Program Files (x86)\OpenSSL
-            openssl_configure: VC-WIN32
-            dokan_machine: x86
-            dokan_lib_dir: x86\lib
-            artifact_name: cppcryptfs-x86-release
-            output_dir: Win32\Release
+
 
     steps:
       - name: Checkout
@@ -58,83 +49,41 @@ jobs:
           if (-not $pubH) { throw "public.h not found in dokany source" }
           Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\" -Force
 
-          # Generate dokan2.lib import library for ${{ matrix.arch }}
-          # x64: DEF file with plain names (no stdcall decoration on x64)
-          # x86: link.exe /EXPORT: — DEF @N is ordinal syntax; link.exe /EXPORT:_F@N=F treats @N as
-          #      part of the symbol name (ordinal separator in /EXPORT is comma: ,@N not @N directly)
+          # Generate dokan2.lib import library (x64 only — plain names, no stdcall decoration)
           $libOut = "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
-          if ("${{ matrix.arch }}" -eq "x86") {
-            # Compile a minimal stub so link.exe has at least one input object
-            $stubC = "$env:RUNNER_TEMP\dokan2_stub.c"
-            "void dokan2_stub(void){}" | Out-File -Encoding ascii $stubC
-            cl.exe /c /nologo /W0 "$stubC" /Fo:"$env:RUNNER_TEMP\dokan2_stub.obj"
-            if ($LASTEXITCODE -ne 0) { throw "cl.exe stub compile failed" }
-            # link.exe /EXPORT:_Func@N=Func: @N is part of export name, not ordinal (ordinal = ,@N)
-            link.exe /DLL /MACHINE:X86 /NODEFAULTLIB /NOENTRY `
-              /OUT:"$env:RUNNER_TEMP\dummy_dokan2.dll" `
-              /IMPLIB:"$libOut" `
-              "$env:RUNNER_TEMP\dokan2_stub.obj" `
-              /EXPORT:_DokanInit@0=DokanInit `
-              /EXPORT:_DokanShutdown@0=DokanShutdown `
-              /EXPORT:_DokanMain@8=DokanMain `
-              /EXPORT:_DokanCreateFileSystem@12=DokanCreateFileSystem `
-              /EXPORT:_DokanWaitForFileSystemClosed@8=DokanWaitForFileSystemClosed `
-              /EXPORT:_DokanWaitForFileSystemClosedEx@8=DokanWaitForFileSystemClosedEx `
-              /EXPORT:_DokanReleaseFileSystem@4=DokanReleaseFileSystem `
-              /EXPORT:_DokanIsFileSystemRunning@4=DokanIsFileSystemRunning `
-              /EXPORT:_DokanRemoveMountPoint@4=DokanRemoveMountPoint `
-              /EXPORT:_DokanRemoveMountPointEx@8=DokanRemoveMountPointEx `
-              /EXPORT:_DokanOpenRequestorToken@4=DokanOpenRequestorToken `
-              /EXPORT:_DokanCloseHandle@4=DokanCloseHandle `
-              /EXPORT:_DokanNtStatusFromWin32@4=DokanNtStatusFromWin32 `
-              /EXPORT:_DokanMapKernelToUserCreateFileFlags@28=DokanMapKernelToUserCreateFileFlags `
-              /EXPORT:_DokanGetVersion@0=DokanGetVersion `
-              /EXPORT:_DokanDriverVersion@0=DokanDriverVersion `
-              /EXPORT:_DokanResetTimeout@8=DokanResetTimeout `
-              /EXPORT:_DokanGetMountPointList@8=DokanGetMountPointList `
-              /EXPORT:_DokanReleaseMountPointList@4=DokanReleaseMountPointList `
-              /EXPORT:_DokanIsNameInExpression@12=DokanIsNameInExpression `
-              /EXPORT:_DokanNotifyCreate@12=DokanNotifyCreate `
-              /EXPORT:_DokanNotifyDelete@12=DokanNotifyDelete `
-              /EXPORT:_DokanNotifyUpdate@8=DokanNotifyUpdate `
-              /EXPORT:_DokanNotifyXAttrUpdate@8=DokanNotifyXAttrUpdate `
-              /EXPORT:_DokanNotifyRename@20=DokanNotifyRename
-            if ($LASTEXITCODE -ne 0) { throw "link.exe import lib creation failed for x86" }
-          } else {
-            $defLines = @(
-              "LIBRARY dokan2",
-              "EXPORTS",
-              "  DokanInit",
-              "  DokanShutdown",
-              "  DokanMain",
-              "  DokanCreateFileSystem",
-              "  DokanWaitForFileSystemClosed",
-              "  DokanWaitForFileSystemClosedEx",
-              "  DokanReleaseFileSystem",
-              "  DokanIsFileSystemRunning",
-              "  DokanRemoveMountPoint",
-              "  DokanRemoveMountPointEx",
-              "  DokanOpenRequestorToken",
-              "  DokanCloseHandle",
-              "  DokanNtStatusFromWin32",
-              "  DokanMapKernelToUserCreateFileFlags",
-              "  DokanGetVersion",
-              "  DokanDriverVersion",
-              "  DokanResetTimeout",
-              "  DokanGetMountPointList",
-              "  DokanReleaseMountPointList",
-              "  DokanIsNameInExpression",
-              "  DokanNotifyCreate",
-              "  DokanNotifyDelete",
-              "  DokanNotifyUpdate",
-              "  DokanNotifyXAttrUpdate",
-              "  DokanNotifyRename"
-            )
-            $defPath = "$env:RUNNER_TEMP\dokan2-x64.def"
-            $defLines -join "`n" | Out-File -Encoding ascii $defPath
-            lib.exe /def:"$defPath" /machine:X64 /out:"$libOut"
-            if ($LASTEXITCODE -ne 0) { throw "lib.exe /def failed for x64" }
-          }
+          $defLines = @(
+            "LIBRARY dokan2",
+            "EXPORTS",
+            "  DokanInit",
+            "  DokanShutdown",
+            "  DokanMain",
+            "  DokanCreateFileSystem",
+            "  DokanWaitForFileSystemClosed",
+            "  DokanWaitForFileSystemClosedEx",
+            "  DokanReleaseFileSystem",
+            "  DokanIsFileSystemRunning",
+            "  DokanRemoveMountPoint",
+            "  DokanRemoveMountPointEx",
+            "  DokanOpenRequestorToken",
+            "  DokanCloseHandle",
+            "  DokanNtStatusFromWin32",
+            "  DokanMapKernelToUserCreateFileFlags",
+            "  DokanGetVersion",
+            "  DokanDriverVersion",
+            "  DokanResetTimeout",
+            "  DokanGetMountPointList",
+            "  DokanReleaseMountPointList",
+            "  DokanIsNameInExpression",
+            "  DokanNotifyCreate",
+            "  DokanNotifyDelete",
+            "  DokanNotifyUpdate",
+            "  DokanNotifyXAttrUpdate",
+            "  DokanNotifyRename"
+          )
+          $defPath = "$env:RUNNER_TEMP\dokan2-x64.def"
+          $defLines -join "`n" | Out-File -Encoding ascii $defPath
+          lib.exe /def:"$defPath" /machine:X64 /out:"$libOut"
+          if ($LASTEXITCODE -ne 0) { throw "lib.exe /def failed for x64" }
           if (-not (Test-Path "$sdkRoot\include\dokan\dokan.h")) { throw "dokan.h missing" }
           if (-not (Test-Path "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"))  { throw "dokan2.lib missing" }
           Write-Host "Dokany SDK ready at $sdkRoot (${{ matrix.arch }})"
