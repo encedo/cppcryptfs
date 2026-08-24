@@ -2,6 +2,12 @@
 
 Changelog
 ------------
+v1.4.4.10 25 Apr 2026
+* Added ARM64 build.
+
+v1.4.4.9 28 Mar 2026
+* yfdyh000 translated the GUI to Chinese simplified.
+
 v1.4.4.8 22 Mar 2026
 * nbb1967 convereted cppcryptfs to use localizable text and provided a Russian translation.
 * monkberry71 fixed a conflict between Raw64 and PlainTextNames flags in the config file when creating a new encrypted volume.

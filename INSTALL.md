@@ -90,7 +90,7 @@ Getting OpenSSL from github will get you the latest development version of OpenS
 current 3.0.x Long Term Support (LTS) version of OpenSSL (currently openssl-3.0.13).  These are available from https://www.openssl.org/source/.  To use those, you will need to download
 the .tar.gz and extract it into a directory.  You can build it with the same instructions that follow regardless of how you get OpenSSL.
 
-Microsoft has announced a compiler-based mitigation for one variant of the Spectre vulnerability.  To use it, you need to have version 15.5 or higher of Visual Studio.  To use the mitigation with OpenSSL, you need to add the /Qspectre flag to the compiler optimization flags.  OpenSSL currently does not use this flag.  Also, to be extra safe, add the /guard:cf (Control Flow Guard) flag.  To use these, you need to edit c:\\git\openssl\\Configurations\\10-main.conf and change "/O2" to "/O2 /Qspectre /guard:cf".  
+Microsoft has announced a compiler-based mitigation for one variant of the Spectre vulnerability.  To use it, you need to have version 15.5 or higher of Visual Studio.  To use the mitigation with OpenSSL, you need to add the /Qspectre flag to the compiler optimization flags.  OpenSSL currently does not use this flag.  Also, to be extra safe, add the /guard:cf (Control Flow Guard) flag.  To use these, you need to edit c:\\git\openssl\\Configurations\\10-main.conf and change "/O2" to "/O2 /Qspectre /guard:cf" (omit /guard:cf if building for ARM64).
 
 You need to make the above changes to 10-main.conf BEFORE running the perl command that generates the makefile.
 
@@ -108,19 +108,21 @@ Then run the batch file that comes with Visual Studio that sets up the environme
 "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 ```
 
-Use "x86" in place of "amd64" if you are doing a 32-bit build.
+Use "x86" in place of "amd64" if you are doing a 32-bit build. If cross compiling ARM64 on Intel, use "x64_arm64" instead of "amd64".
 
 The vcvarsall.bat from Visual Studio 2026 must be run in a Windows cmd.exe command shell.  It doesn't like being run in third-party command shells.
 
 
 Then run (ActiveState) perl to configure OpenSSL for a Visual Studio AMD64/X86_64 static build.  
 
-Use "VC-WIN32" instead of  "VC-WIN64A" if you're doing a 32-bit build.
+Use "VC-WIN32" instead of  "VC-WIN64A" if you're doing a 32-bit build. Use "VC-WIN64-ARM" if doing an arm build.
 
 
 ```
-perl Configure VC-WIN64A no-shared
+perl Configure VC-WIN64A no-shared no-tests --prefix=C:\git\openssl-amd64-static  --openssldir=C:\git\openssl-amd64-static
 ```
+
+This will cause the output of the build to be placed under C:\git\openssl-amd64-static. Change amd64 to x86 or arm64 if doing 32-bit intel or ARM64 builds.
 
 Then run "nmake" to build OpenSSL.
 
@@ -129,16 +131,13 @@ Then run "nmake" to build OpenSSL.
 nmake
 ```
 
-Then run "nmake install" to install it.  
+Then run "nmake install_sw" to install into those directories specified above.  
 
 
 ```
-nmake install
+nmake install_sw
 ```
 
-nmake install must be run from an elevated (administrator) command prompt in order for it to work.  If you built OpenSSL from a non-elevated command prompt, then start an elevated one, cd to c:\git\openssl, and be sure to invoke vcvarsall.bat as shown above again in the elevated command prompt before running nmake install in it. 
-
-There might be errors about installing the OpenSSL documentation.  They won't affect your ability to build cppcryptfs.
 
 RapidJSON
 ------
