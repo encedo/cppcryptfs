@@ -14,16 +14,40 @@ jobs:
     runs-on: windows-2022
 
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # Dependency paths are dictated by the .vcxproj files, not chosen here.
+          # Upstream v1.4.4.10 moved OpenSSL to C:\git\openssl-<arch>-static and put
+          # the ARM64 Dokany import library under arm64\lib. Following that keeps the
+          # project files identical to upstream and out of future merge conflicts.
           - arch: x64
-            platform: x64
+            msvc_arch: amd64
             msbuild_platform: x64
-            openssl_dir: C:\Program Files\OpenSSL
+            openssl_dir: C:\git\openssl-amd64-static
             openssl_configure: VC-WIN64A
+            needs_nasm: true
             dokan_lib_dir: lib
+            lib_machine: X64
+            spectre_lib_subdir: x64
+            spectre_component: Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre
             artifact_name: cppcryptfs-x64-release
             output_dir: x64\Release
+
+          # Cross-compiled from the x64 runner: amd64_arm64 selects the host-x64,
+          # target-ARM64 toolchain. VC-WIN64-ARM needs no NASM.
+          - arch: arm64
+            msvc_arch: amd64_arm64
+            msbuild_platform: ARM64
+            openssl_dir: C:\git\openssl-arm64-static
+            openssl_configure: VC-WIN64-ARM
+            needs_nasm: false
+            dokan_lib_dir: arm64\lib
+            lib_machine: ARM64
+            spectre_lib_subdir: arm64
+            spectre_component: Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre
+            artifact_name: cppcryptfs-arm64-release
+            output_dir: ARM64\Release
 
 
     steps:
@@ -36,7 +60,7 @@ jobs:
       - name: Setup MSVC dev environment (${{ matrix.arch }})
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: ${{ matrix.arch }}
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Install Dokany 2.3.1.1000 SDK (headers from source + import lib from def)
         shell: pwsh
@@ -54,7 +78,8 @@ jobs:
           if (-not $pubH) { throw "public.h not found in dokany source" }
           Copy-Item $pubH.FullName -Destination "$sdkRoot\include\dokan\" -Force
 
-          # Generate dokan2.lib import library (x64 only — plain names, no stdcall decoration)
+          # Generate the dokan2.lib import library from a .def. Plain names, no stdcall
+          # decoration, so the same export list serves every 64-bit target.
           $libOut = "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"
           $defLines = @(
             "LIBRARY dokan2",
@@ -85,21 +110,31 @@ jobs:
             "  DokanNotifyXAttrUpdate",
             "  DokanNotifyRename"
           )
-          $defPath = "$env:RUNNER_TEMP\dokan2-x64.def"
+          $defPath = "$env:RUNNER_TEMP\dokan2-${{ matrix.arch }}.def"
           $defLines -join "`n" | Out-File -Encoding ascii $defPath
-          lib.exe /def:"$defPath" /machine:X64 /out:"$libOut"
-          if ($LASTEXITCODE -ne 0) { throw "lib.exe /def failed for x64" }
+          lib.exe /def:"$defPath" /machine:${{ matrix.lib_machine }} /out:"$libOut"
+          if ($LASTEXITCODE -ne 0) { throw "lib.exe /def failed for ${{ matrix.arch }}" }
           if (-not (Test-Path "$sdkRoot\include\dokan\dokan.h")) { throw "dokan.h missing" }
           if (-not (Test-Path "$sdkRoot\${{ matrix.dokan_lib_dir }}\dokan2.lib"))  { throw "dokan2.lib missing" }
           Write-Host "Dokany SDK ready at $sdkRoot (${{ matrix.arch }})"
 
-      - name: Check pre-installed OpenSSL (${{ matrix.arch }})
+      # OpenSSL now builds from source for both targets: upstream expects it under
+      # C:\git\openssl-<arch>-static, which no runner image preinstalls, and a static
+      # build is what the projects link against anyway. Cache it — otherwise every
+      # run rebuilds it once per architecture.
+      - name: Cache OpenSSL (${{ matrix.arch }})
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.openssl_dir }}
+          key: openssl-3.0.13-static-${{ matrix.arch }}-${{ runner.os }}
+
+      - name: Check for OpenSSL (${{ matrix.arch }})
         id: check-openssl
         shell: pwsh
         run: |
           $lib = "${{ matrix.openssl_dir }}\lib\libcrypto.lib"
           if (Test-Path $lib) {
-            Write-Host "OpenSSL static lib found — skipping build"
+            Write-Host "OpenSSL static lib found (cache hit) — skipping build"
             echo "found=true" >> $env:GITHUB_OUTPUT
           } else {
             Write-Host "OpenSSL static lib not found at $lib — will build from source"
@@ -107,7 +142,7 @@ jobs:
           }
 
       - name: Install NASM (OpenSSL build dep)
-        if: steps.check-openssl.outputs.found != 'true'
+        if: steps.check-openssl.outputs.found != 'true' && matrix.needs_nasm
         run: choco install nasm --no-progress -y
 
       - name: Build and install OpenSSL 3.0.13 (static, ${{ matrix.arch }})
@@ -133,7 +168,7 @@ jobs:
       # The projects set SpectreMitigation, so the toolset needs its Spectre-mitigated
       # libraries. The pinned image carries them; install them if a future image does
       # not, rather than failing deep inside msbuild with MSB8040.
-      - name: Ensure Spectre-mitigated libraries for v143
+      - name: Ensure Spectre-mitigated libraries for v143 (${{ matrix.arch }})
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -141,7 +176,7 @@ jobs:
           if (-not $vsPath) { throw "Visual Studio not found" }
 
           $found = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
-                   ForEach-Object { Join-Path $_.FullName "lib\spectre\${{ matrix.arch }}" } |
+                   ForEach-Object { Join-Path $_.FullName "lib\spectre\${{ matrix.spectre_lib_subdir }}" } |
                    Where-Object { Test-Path $_ }
 
           if ($found) {
@@ -154,7 +189,7 @@ jobs:
           # Not $args — that is a PowerShell automatic variable.
           $installArgs = @(
             "modify", "--installPath", "`"$vsPath`"",
-            "--add", "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
+            "--add", "${{ matrix.spectre_component }}",
             "--quiet", "--norestart", "--nocache"
           )
           $p = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
@@ -163,7 +198,7 @@ jobs:
           }
 
           $found = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Directory |
-                   ForEach-Object { Join-Path $_.FullName "lib\spectre\${{ matrix.arch }}" } |
+                   ForEach-Object { Join-Path $_.FullName "lib\spectre\${{ matrix.spectre_lib_subdir }}" } |
                    Where-Object { Test-Path $_ }
           if (-not $found) { throw "Spectre-mitigated libraries still missing after install" }
           Write-Host "Installed: $($found -join ', ')"

@@ -81,6 +81,40 @@ A preflight step checks for `VC\Tools\MSVC\<ver>\lib\spectre\x64` and installs
 `Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre` if it is absent, so a
 future image change degrades into a slower build rather than a failed one.
 
-The merge of upstream v1.4.4.10 added ARM64 configurations, which also carry the
-setting. The matrix builds x64 only, so they are not exercised; building ARM64 would
-need `Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre` as well.
+Each matrix entry names its own component, so ARM64 pulls
+`Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre` and x64 the x86/x64 one.
+
+## ARM64
+
+The matrix builds `x64` and `ARM64`. ARM64 is cross-compiled from the x64 runner —
+`ilammy/msvc-dev-cmd` gets `amd64_arm64` (host x64, target ARM64) rather than `arm64`,
+which would ask for a native ARM64 host we do not have.
+
+`fail-fast: false`, so a break on one architecture still tells you about the other.
+
+## Dependency paths come from the .vcxproj files
+
+Do not pick install locations in the workflow. The project files hardcode them, and
+upstream v1.4.4.10 moved them:
+
+| | expected by the projects |
+|---|---|
+| OpenSSL x64 | `C:\git\openssl-amd64-static` |
+| OpenSSL ARM64 | `C:\git\openssl-arm64-static` |
+| Dokany x64 | `…\Dokan Library-2.3.1\lib\dokan2.lib` |
+| Dokany ARM64 | `…\Dokan Library-2.3.1\arm64\lib\dokan2.lib` |
+
+Before that move the projects looked in `C:\Program Files\OpenSSL`, which is what the
+workflow used to install to. Following upstream's layout rather than patching the
+projects keeps our fork's diff to the CI workflow alone, and out of the way of the next
+merge.
+
+Two consequences of the move:
+
+- no runner image preinstalls `C:\git\openssl-*-static`, so OpenSSL always builds from
+  source. It is cached per architecture (`actions/cache`, keyed on version and arch) —
+  without that, every run rebuilds it twice.
+- NASM is only fetched for `VC-WIN64A`; `VC-WIN64-ARM` does not use it.
+
+The Dokany import library is generated from a `.def` with `lib.exe /machine:<arch>`.
+The export list has no stdcall decoration, so one list serves both 64-bit targets.
