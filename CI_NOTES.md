@@ -57,3 +57,30 @@ msbuild cppcryptfs.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformTools
 - `msbuild_platform` in the matrix must match the platform name in the `.sln` (`x64` for x64; for x86 it would be `x86`, not `Win32` as used in older project formats).
 - `dokan_lib_dir` for x64 is `lib` (full path: `...\Dokan Library-2.3.1\lib\dokan2.lib`).
 - `public.h` in the Dokany source tree lives under `sys/`, not `dokan/` — it must be copied separately.
+
+## Spectre-mitigated libraries (MSB8040)
+
+Every project sets `SpectreMitigation`, so the toolset must have its Spectre-mitigated
+libraries installed or msbuild stops with:
+
+```
+error MSB8040: Spectre-mitigated libraries are required for this project.
+```
+
+This appeared without any change on our side. The build forces
+`/p:PlatformToolset=v143`, and the job used to run on `windows-latest`; when that image
+moved to a Visual Studio that no longer ships the v143 Spectre libraries, a pinned
+toolset on a floating image stopped matching. The runner is now pinned to
+`windows-2022`, which carries them.
+
+Do **not** fix this by passing `/p:SpectreMitigation=false`. Upstream enabled the
+setting deliberately on a filesystem that holds master keys in memory, and turning it
+off in CI would quietly ship a weaker binary than upstream intends.
+
+A preflight step checks for `VC\Tools\MSVC\<ver>\lib\spectre\x64` and installs
+`Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre` if it is absent, so a
+future image change degrades into a slower build rather than a failed one.
+
+The merge of upstream v1.4.4.10 added ARM64 configurations, which also carry the
+setting. The matrix builds x64 only, so they are not exercised; building ARM64 would
+need `Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre` as well.

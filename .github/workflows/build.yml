@@ -6,7 +6,12 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # Pinned, not windows-latest. The build forces PlatformToolset=v143 below, and
+    # a pinned toolset on a floating image only works until the image moves on —
+    # which is how this broke: windows-latest reached a Visual Studio that no
+    # longer ships the v143 Spectre-mitigated libraries, and every project that
+    # sets SpectreMitigation failed with MSB8040.
+    runs-on: windows-2022
 
     strategy:
       matrix:
@@ -124,6 +129,44 @@ jobs:
 
       - name: Clone RapidJSON (headers only)
         run: git clone --depth 1 https://github.com/Tencent/rapidjson.git C:\git\rapidjson
+
+      # The projects set SpectreMitigation, so the toolset needs its Spectre-mitigated
+      # libraries. The pinned image carries them; install them if a future image does
+      # not, rather than failing deep inside msbuild with MSB8040.
+      - name: Ensure Spectre-mitigated libraries for v143
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          if (-not $vsPath) { throw "Visual Studio not found" }
+
+          $found = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
+                   ForEach-Object { Join-Path $_.FullName "lib\spectre\${{ matrix.arch }}" } |
+                   Where-Object { Test-Path $_ }
+
+          if ($found) {
+            Write-Host "Spectre-mitigated libraries present: $($found -join ', ')"
+            exit 0
+          }
+
+          Write-Host "Spectre-mitigated libraries missing — installing"
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          # Not $args — that is a PowerShell automatic variable.
+          $installArgs = @(
+            "modify", "--installPath", "`"$vsPath`"",
+            "--add", "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
+            "--quiet", "--norestart", "--nocache"
+          )
+          $p = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+            throw "vs_installer returned $($p.ExitCode)"
+          }
+
+          $found = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Directory |
+                   ForEach-Object { Join-Path $_.FullName "lib\spectre\${{ matrix.arch }}" } |
+                   Where-Object { Test-Path $_ }
+          if (-not $found) { throw "Spectre-mitigated libraries still missing after install" }
+          Write-Host "Installed: $($found -join ', ')"
 
       - name: Build cppcryptfs (Release|${{ matrix.msbuild_platform }})
         shell: cmd
